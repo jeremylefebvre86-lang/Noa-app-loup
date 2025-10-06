@@ -606,9 +606,7 @@
         <button class="close-btn" onclick="closeSettings()">✕</button>
       </div>
       
-      <div class="success-text">
-        ✅ Gemini GRATUIT
-      </div>
+      <div class="success-text" id="keyStatus">🔎 Vérification des clés…</div>
       
       <div class="form-group">
         <label>🤖 Fournisseur</label>
@@ -655,6 +653,16 @@
       </div>
       
       <button class="save-btn" onclick="saveSettings()">💾 Enregistrer</button>
+      <hr>
+      <div class="form-group">
+        <label>🧠 Mémoire & sauvegarde</label>
+        <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+          <button class="save-btn" onclick="exportFullState()">💾 Sauvegarder</button>
+          <button class="delete-btn" onclick="importFullState()">📂 Restaurer</button>
+        </div>
+        <div class="info-text" id="backupInfo">Sauvegarde locale complète (clé API, mémoire, historique).</div>
+      </div>
+
     </div>
   </div>
 
@@ -748,6 +756,14 @@
       const hasKey = (config.provider === 'openai' && config.openaiKey) || 
                      (config.provider === 'gemini' && config.geminiKey);
       indicator.className = 'status-indicator ' + (hasKey ? 'active' : 'inactive');
+      const ks = document.getElementById('keyStatus');
+      if (ks) {
+        if (config.provider === 'gemini') {
+          ks.textContent = hasKey ? '✅ Clé personnelle Gemini active' : '⚠️ Aucune clé Gemini — mode gratuit limité';
+        } else {
+          ks.textContent = hasKey ? '✅ Clé personnelle OpenAI active' : '⚠️ Aucune clé OpenAI';
+        }
+      }
     }
 
     function toggleVoice() {
@@ -1271,7 +1287,70 @@
       if (e.key === 'Enter') sendMessage();
     });
 
-    loadConfig();
+    
+    // === Sauvegarde / Restauration complètes (localStorage entier) ===
+    function exportFullState() {
+      if (!confirm("💾 Sauvegarder toute la mémoire de Noä (clé API, paramètres, historique) ?")) return;
+      try {
+        const dump = { localStorage: { ...localStorage }, date: new Date().toISOString() };
+        const dateStr = new Date().toISOString().split("T")[0];
+        const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `noa_full_backup_${dateStr}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        const info = document.getElementById("backupInfo");
+        if (info) info.textContent = "✅ Sauvegarde manuelle effectuée.";
+      } catch (e) {
+        alert("❌ Erreur lors de la sauvegarde.");
+      }
+    }
+
+    function importFullState() {
+      if (!confirm("⚠️ Restaurer va remplacer la mémoire actuelle de Noä. Continuer ?")) return;
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json,application/json";
+      input.onchange = async (e) => {
+        try {
+          const file = e.target.files[0];
+          const text = await file.text();
+          let data = JSON.parse(text);
+          // Supporte à la fois {localStorage:{...}} et dump direct {...}
+          const store = data.localStorage ? data.localStorage : data;
+          localStorage.clear();
+          Object.entries(store).forEach(([k,v]) => localStorage.setItem(k, v));
+          alert("✅ Mémoire restaurée. Redémarrage...");
+          location.reload();
+        } catch (err) {
+          alert("❌ Fichier invalide.");
+        }
+      };
+      input.click();
+    }
+
+    function autoBackupDaily() {
+      try {
+        const today = new Date().toISOString().split("T")[0];
+        if (localStorage.getItem("noa_last_auto_save") === today) return; // déjà fait
+        const dump = { localStorage: { ...localStorage }, date: new Date().toISOString() };
+        const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `noa_auto_backup_${today}.json`;
+        a.click();
+        localStorage.setItem("noa_last_auto_save", today);
+        const info = document.getElementById("backupInfo");
+        if (info) info.textContent = "💾 Sauvegarde automatique du jour effectuée.";
+      } catch (e) {
+        console.warn("Auto-backup error:", e);
+      }
+    }
+
+  loadConfig();
+  autoBackupDaily();
   </script>
 </body>
 </html>
